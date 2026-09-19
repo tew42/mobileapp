@@ -11,6 +11,13 @@ _global.navigator = _global.navigator || {};
 _global._PebbleGeoCB = {
     _requestCallbacks: new Map(),
     _watchCallbacks: new Map(),
+    _error: (message, code) => ({
+        message,
+        code,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+    }),
     _resultGetSuccess: (id, latitude, longitude, accuracy, altitude, heading, speed) => {
         const callback = _PebbleGeoCB._requestCallbacks.get(id);
         if (callback && callback.success) {
@@ -18,11 +25,11 @@ _global._PebbleGeoCB = {
             callback.success({ coords: { latitude, longitude, accuracy, altitude, heading, speed } });
         }
     },
-    _resultGetError: (id, message) => {
+    _resultGetError: (id, message, code) => {
         const callback = _PebbleGeoCB._requestCallbacks.get(id);
         if (callback && callback.error) {
             _PebbleGeoCB._requestCallbacks.delete(id);
-            callback.error({ message, code: 1 });
+            callback.error(_PebbleGeoCB._error(message, code));
         }
     },
     _resultWatchSuccess: (id, latitude, longitude, accuracy, altitude, heading, speed) => {
@@ -31,10 +38,10 @@ _global._PebbleGeoCB = {
             callback.success({ coords: { latitude, longitude, accuracy, altitude, heading, speed } });
         }
     },
-    _resultWatchError: (id, message) => {
+    _resultWatchError: (id, message, code) => {
         const callback = _PebbleGeoCB._watchCallbacks.get(id);
         if (callback && callback.error) {
-            callback.error({ message, code: 1 });
+            callback.error(_PebbleGeoCB._error(message, code));
         }
     }
 };

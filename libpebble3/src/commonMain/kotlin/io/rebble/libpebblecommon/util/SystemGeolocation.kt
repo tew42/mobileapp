@@ -5,6 +5,13 @@ import kotlin.time.Duration
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
+/** Mirrors the W3C GeolocationPositionError codes that PKJS apps check. */
+enum class GeolocationError(val code: Int) {
+    PermissionDenied(1),
+    PositionUnavailable(2),
+    Timeout(3),
+}
+
 sealed class GeolocationPositionResult {
     data class Success(
         val timestamp: Instant,
@@ -15,7 +22,7 @@ sealed class GeolocationPositionResult {
         val heading: Double?,
         val speed: Double?
     ) : GeolocationPositionResult()
-    data class Error(val message: String) : GeolocationPositionResult()
+    data class Error(val message: String, val reason: GeolocationError) : GeolocationPositionResult()
 }
 
 interface SystemGeolocation {
