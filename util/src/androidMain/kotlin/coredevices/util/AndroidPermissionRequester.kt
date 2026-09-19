@@ -36,7 +36,7 @@ class AndroidPermissionRequester(
             Permission.SetAlarms -> requestAlarmPermission(uiContext.activity)
             Permission.BatteryOptimization -> requestBatteryOptimizationDisable(uiContext.activity)
             else -> requestAndroidRuntimePermissions(
-                permission.asAndroidPermissions(),
+                permission,
                 uiContext.activity,
             )
         }
@@ -50,9 +50,10 @@ class AndroidPermissionRequester(
         }
 
     private suspend fun requestAndroidRuntimePermissions(
-        permissions: List<String>,
+        permission: Permission,
         activity: Activity
     ): PermissionResult {
+        val permissions = permission.asAndroidPermissions()
         logger.v { "requestAndroidRuntimePermissions: $permissions" }
         val firstPermission = permissions.firstOrNull()
         if (firstPermission == null) {
@@ -72,15 +73,18 @@ class AndroidPermissionRequester(
                 permissions.forEach {
                     logger.d { "Permission ${it.key} granted: ${it.value}" }
                 }
-                val granted = permissions.all { it.value }
+                // An empty result map means the request was cancelled, never that the
+                // permission was granted.
+                val granted = permissions.isNotEmpty() &&
+                        permission.isGrantedBy(permissions.values.toList())
                 val result = if (granted) {
                     PermissionResult.Granted
                 } else {
-                    if (ActivityCompat.shouldShowRequestPermissionRationale(
-                            activity,
-                            permissions.keys.first(),
-                        )
-                    ) {
+                    // Classify on something actually denied: with an approximate grant the
+                    // coarse entry is granted, and rationale is always false for those.
+                    val denied = permissions.entries.firstOrNull { !it.value }?.key
+                        ?: firstPermission
+                    if (ActivityCompat.shouldShowRequestPermissionRationale(activity, denied)) {
                         PermissionResult.Rejected
                     } else {
                         PermissionResult.RejectedForever
@@ -107,10 +111,12 @@ class AndroidPermissionRequester(
         uiContext.activity.startActivity(intent)
     }
 
-    private fun permissionGranted(permission: Permission): Boolean =
-        permission.asAndroidPermissions().map {
+    private fun permissionGranted(permission: Permission): Boolean {
+        val granted = permission.asAndroidPermissions().map {
             context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
-        }.all { it }
+        }
+        return permission.isGrantedBy(granted)
+    }
 
     private fun hasAlarmPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -182,7 +188,12 @@ class AndroidPermissionRequester(
 }
 
 private fun Permission.asAndroidPermissions(): List<String> = when (this) {
-    Permission.Location -> listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    // Requesting fine alone is ignored on Android 12; both must go in one request.
+    Permission.Location -> listOf(
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+    )
+    Permission.PreciseLocation -> listOf(Manifest.permission.ACCESS_FINE_LOCATION)
     Permission.BackgroundLocation -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         listOf(ACCESS_BACKGROUND_LOCATION)
     } else emptyList()

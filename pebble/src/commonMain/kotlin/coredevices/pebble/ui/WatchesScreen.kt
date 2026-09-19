@@ -281,9 +281,8 @@ fun WatchesScreen(navBarNav: NavBarNav, topBarParams: TopBarParams) {
     }
 
     suspend fun ensureScanPermission(uiContext: PlatformUiContext): Boolean {
-        if (requiredScanPermission != null && permissionRequester.missingPermissions.value.contains(
-                requiredScanPermission
-            )
+        if (requiredScanPermission != null &&
+            !permissionRequester.grantedPermissions.value.contains(requiredScanPermission)
         ) {
             val result = permissionRequester.requestPermission(requiredScanPermission, uiContext)
             if (result != PermissionResult.Granted) {
