@@ -30,11 +30,22 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
     companion object {
         private val logger = Logger.withTag("AndroidSystemGeolocation")
+
+        /** Approximate fixes are snapped to a coarse grid, so polling faster gains nothing. */
+        private val COARSE_MIN_INTERVAL = 60.seconds
+
+        /**
+         * How stale a seed fix may be. The JS shim passes no timestamp to the watchapp, so it
+         * cannot judge staleness itself.
+         */
+        private val COARSE_SEED_MAX_AGE = 1.hours
     }
     private val context = appContext.context
     private val locationManager by lazy {
@@ -48,6 +59,12 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
             close()
             awaitClose()
         } else {
+            val precise = hasPrecisePermission()
+            val effectiveInterval = if (precise) {
+                intervalMillis
+            } else {
+                intervalMillis.coerceAtLeast(COARSE_MIN_INTERVAL.inWholeMilliseconds)
+            }
             val bestProvider = getBestProvider()
             if (bestProvider == null) {
                 trySend(GeolocationPositionResult.Error("Location not available, no suitable provider found"))
@@ -56,6 +73,11 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
                 return@callbackFlow
             }
             logger.d { "Flow using location provider: $bestProvider (highAccuracy=$highAccuracy)" }
+            if (!precise) {
+                freshestLastKnownLocation()
+                    ?.takeIf { Clock.System.now() - Instant.fromEpochMilliseconds(it.time) < COARSE_SEED_MAX_AGE }
+                    ?.let { trySend(it.toResult()) }
+            }
             val locationListener = object : LocationListenerCompat {
                 override fun onStatusChanged(provider: String, status: Int, extras: Bundle?) {
                     logger.d { "Location provider $provider status changed: $status" }
@@ -65,7 +87,7 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
                     trySend(location.toResult())
                 }
             }
-            val quality = if (highAccuracy) {
+            val quality = if (highAccuracy && precise) {
                 LocationRequestCompat.QUALITY_HIGH_ACCURACY
             } else {
                 LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY
@@ -75,7 +97,7 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
                 LocationManagerCompat.requestLocationUpdates(
                     locationManager,
                     bestProvider,
-                    LocationRequestCompat.Builder(intervalMillis)
+                    LocationRequestCompat.Builder(effectiveInterval)
                         .setQuality(quality)
                         .setMinUpdateDistanceMeters(0f)
                         .build(),
@@ -98,13 +120,20 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
         }
     }
 
+    private fun hasPrecisePermission(): Boolean =
+        context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+
     private fun getBestProvider(): String? {
         val enabledProviders = locationManager.getProviders(true)
         val result = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     LocationManager.FUSED_PROVIDER in enabledProviders -> LocationManager.FUSED_PROVIDER
             LocationManager.NETWORK_PROVIDER in enabledProviders -> LocationManager.NETWORK_PROVIDER
-            LocationManager.GPS_PROVIDER in enabledProviders -> LocationManager.GPS_PROVIDER
+            // Requesting GPS with only coarse permission throws below Android 12.
+            LocationManager.GPS_PROVIDER in enabledProviders &&
+                    (hasPrecisePermission() || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) ->
+                LocationManager.GPS_PROVIDER
             else -> null
         }
         result ?: run {
