@@ -46,7 +46,7 @@ import co.touchlab.kermit.Logger
 import coredevices.database.WeatherLocationDao
 import coredevices.database.WeatherLocationEntity
 import coredevices.pebble.weather.WeatherFetcher
-import coredevices.pebble.weather.usefulName
+import coredevices.pebble.weather.searchResultName
 import coredevices.ui.M3Dialog
 import dev.jordond.compass.Place
 import dev.jordond.compass.autocomplete.Autocomplete
@@ -307,7 +307,7 @@ private fun AddWeatherLocationDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        val locationName = place.usefulName() ?: displayName
+                                        val locationName = place.searchResultName() ?: displayName
                                         val location = WeatherLocationEntity(
                                             key = Uuid.random(),
                                             name = locationName,
@@ -356,8 +356,9 @@ private fun AddWeatherLocationDialog(
 }
 
 fun Place.displayName(): String {
-    val name = usefulName()
-    return "$name, ${administrativeArea ?: country}"
+    val name = searchResultName()
+    val region = (administrativeArea ?: country)?.trim()?.takeIf { it.isNotBlank() && it != name }
+    return listOfNotNull(name, region).joinToString(", ").ifBlank { "Unknown location" }
 }
 
 @Composable

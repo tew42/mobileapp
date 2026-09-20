@@ -2,6 +2,7 @@ package io.rebble.libpebblecommon.io.rebble.libpebblecommon.util
 
 import io.rebble.libpebblecommon.util.IOSLocation
 import co.touchlab.kermit.Logger
+import io.rebble.libpebblecommon.util.GeolocationError
 import io.rebble.libpebblecommon.util.GeolocationPositionResult
 import io.rebble.libpebblecommon.util.SystemGeolocation
 import io.rebble.libpebblecommon.util.SystemGeolocation.Companion.DEFAULT_MAX_AGE
@@ -38,23 +39,43 @@ class IosSystemGeolocation: SystemGeolocation {
     private val location = callbackFlow {
         val iosLocation = IOSLocation(
             locationCallback = { location: CLLocation? ->
-                trySend(location?.toResult() ?: GeolocationPositionResult.Error("Location is null"))
+                trySend(
+                    location?.toResult() ?: GeolocationPositionResult.Error(
+                        "Location is null",
+                        GeolocationError.PositionUnavailable,
+                    )
+                )
             },
             authorizationCallback = { granted: Boolean ->
                 if (granted) {
                     logger.d { "Location access granted" }
                 } else {
                     logger.w { "Location access denied" }
-                    trySend(GeolocationPositionResult.Error("Location access denied"))
+                    trySend(
+                        GeolocationPositionResult.Error(
+                            "Location access denied",
+                            GeolocationError.PermissionDenied,
+                        )
+                    )
                 }
             },
             errorCallback = { error: NSError? ->
                 if (error != null) {
                     logger.e { "Location error: ${error.localizedDescription}" }
-                    trySend(GeolocationPositionResult.Error("Location error: ${error.localizedDescription}"))
+                    trySend(
+                        GeolocationPositionResult.Error(
+                            "Location error: ${error.localizedDescription}",
+                            GeolocationError.PositionUnavailable,
+                        )
+                    )
                 } else {
                     logger.w { "Unknown location error" }
-                    trySend(GeolocationPositionResult.Error("Unknown location error"))
+                    trySend(
+                        GeolocationPositionResult.Error(
+                            "Unknown location error",
+                            GeolocationError.PositionUnavailable,
+                        )
+                    )
                 }
             }
         )
@@ -122,7 +143,10 @@ class IosSystemGeolocation: SystemGeolocation {
             logger.w { "No current location available, returning stale last known (age=${now - cached.timestamp})" }
             return cached
         }
-        return active ?: GeolocationPositionResult.Error("Location not available")
+        return active ?: GeolocationPositionResult.Error(
+            "Timed out waiting for a location",
+            GeolocationError.Timeout,
+        )
     }
 
     override suspend fun watchPosition(

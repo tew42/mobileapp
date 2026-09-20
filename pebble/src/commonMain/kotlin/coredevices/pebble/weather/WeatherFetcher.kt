@@ -345,12 +345,23 @@ fun GeocoderResult<Place>.usefulName(): String? {
     return place?.usefulName()
 }
 
-fun Place.usefulName(): String? {
-//    logger.v { "usefulName: name=$name street=$street isoCountryCode=$isoCountryCode country=$country " +
-//            "postalCode=$postalCode administrativeArea=$administrativeArea subAdministrativeArea=$subAdministrativeArea " +
-//            "locality=$locality subLocality=$subLocality thoroughfare=$thoroughfare subThoroughfare=$subThoroughfare" }
-    return locality ?: street
-}
+/**
+ * Name for a place derived from a device fix, which may be approximate: a street name there
+ * belongs to whichever road the fuzzed point landed on, so it is the last resort.
+ */
+fun Place.usefulName(): String? =
+    firstNonBlank(locality, subAdministrativeArea, administrativeArea, street)
+
+/**
+ * Name for a place the user picked out of search. Those coordinates are exact, so a street is
+ * meaningful and stays ahead of the administrative areas.
+ */
+fun Place.searchResultName(): String? =
+    firstNonBlank(locality, street, subAdministrativeArea, administrativeArea)
+
+/** Geocoders return blanks as readily as nulls, and an empty name makes the watch drop the record. */
+private fun firstNonBlank(vararg candidates: String?): String? =
+    candidates.firstOrNull { !it.isNullOrBlank() }?.trim()
 
 enum class Day(
     val dayUuid: Uuid,

@@ -43,6 +43,7 @@ class IosPermissionRequester(
     ): PermissionResult {
         return when (permission) {
             Permission.Location -> requestLocationPermission()
+            Permission.PreciseLocation -> throw IllegalStateException("PreciseLocation not needed on iOS")
             Permission.BackgroundLocation -> requestBackgroundLocationPermission()
             Permission.PostNotifications -> requestNotificationPermission()
             Permission.Bluetooth -> requestBluetoothPermission()
@@ -63,6 +64,8 @@ class IosPermissionRequester(
 
     override suspend fun hasPermission(permission: Permission): Boolean = when (permission) {
         Permission.Location -> hasLocationPermission()
+        // Only Android asks for this; never granted here, and this runs on every app resume.
+        Permission.PreciseLocation -> false
         Permission.BackgroundLocation -> hasBackgroundLocationPermission()
         Permission.PostNotifications -> hasNotificationPermission()
         Permission.Bluetooth -> hasBluetoothPermission()

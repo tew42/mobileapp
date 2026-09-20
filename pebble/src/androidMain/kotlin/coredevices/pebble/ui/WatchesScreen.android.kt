@@ -32,7 +32,7 @@ actual fun scanPermission(): Permission? {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         Permission.Bluetooth
     } else {
-        Permission.Location
+        Permission.PreciseLocation
     }
 }
 

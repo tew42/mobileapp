@@ -23,6 +23,7 @@ enum class PermissionResult {
 
 fun Permission.name(): String = when (this) {
     Permission.Location -> "Location"
+    Permission.PreciseLocation -> "Precise Location"
     Permission.BackgroundLocation -> "Background Location"
     Permission.PostNotifications -> "Show Notifications"
     Permission.Bluetooth -> "Bluetooth"
@@ -42,6 +43,7 @@ fun Permission.name(): String = when (this) {
 
 fun Permission.description(): String = when (this) {
     Permission.Location -> "To power watchfaces using location for e.g. weather"
+    Permission.PreciseLocation -> "To scan for your Pebble on Android 11 and older"
     Permission.BackgroundLocation -> "To power watchfaces using location for e.g. weather, while the Pebble app is running in the background"
     Permission.PostNotifications -> "Get a notification when there is a new software update for your Pebble and show connection status"
     Permission.Bluetooth -> "Connect to your Pebble"
