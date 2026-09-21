@@ -5,6 +5,7 @@ import io.ktor.http.quote
 import io.rebble.libpebblecommon.database.dao.LockerAppPermissionDao
 import io.rebble.libpebblecommon.database.entity.LockerAppPermissionType
 import io.rebble.libpebblecommon.di.LibPebbleKoinComponent
+import io.rebble.libpebblecommon.util.GeolocationError
 import io.rebble.libpebblecommon.util.GeolocationPositionResult
 import io.rebble.libpebblecommon.util.SystemGeolocation
 import kotlinx.coroutines.CoroutineScope
@@ -53,7 +54,7 @@ abstract class GeolocationInterface(
             }
             is GeolocationPositionResult.Error -> {
                 Logger.w { "Geolocation get position error: ${result.message}" }
-                jsRunner.eval("_PebbleGeoCB._resultGetError($id, ${result.message.quote()})")
+                jsRunner.eval("_PebbleGeoCB._resultGetError($id, ${result.message.quote()}, ${result.reason.code})")
             }
         }
     }
@@ -64,7 +65,7 @@ abstract class GeolocationInterface(
                 jsRunner.eval("_PebbleGeoCB._resultWatchSuccess($id, ${result.latitude}, ${result.longitude}, ${result.accuracy}, ${result.altitude}, ${result.heading}, ${result.speed})")
             }
             is GeolocationPositionResult.Error -> {
-                jsRunner.eval("_PebbleGeoCB._resultWatchError($id, ${result.message.quote()})")
+                jsRunner.eval("_PebbleGeoCB._resultWatchError($id, ${result.message.quote()}, ${result.reason.code})")
             }
         }
     }
@@ -91,7 +92,13 @@ abstract class GeolocationInterface(
         scope.launch {
             if (!geolocationPermissionGranted()) {
                 Logger.w { "Watchapp location permission not granted for getCurrentPosition" }
-                triggerPositionResultGet(id.toInt(), GeolocationPositionResult.Error("Location permission not granted"))
+                triggerPositionResultGet(
+                    id.toInt(),
+                    GeolocationPositionResult.Error(
+                        "Location permission not granted",
+                        GeolocationError.PermissionDenied,
+                    ),
+                )
                 return@launch
             }
             triggerPositionResultGet(id.toInt(), systemGeolocation.getCurrentPosition(maxAge, timeout, highAccuracyBool))
@@ -104,7 +111,13 @@ abstract class GeolocationInterface(
         val highAccuracyBool = highAccuracy > 0
         val job = scope.launch {
             if (!geolocationPermissionGranted()) {
-                triggerPositionResultWatch(id.toInt(), GeolocationPositionResult.Error("Location permission not granted"))
+                triggerPositionResultWatch(
+                    id.toInt(),
+                    GeolocationPositionResult.Error(
+                        "Location permission not granted",
+                        GeolocationError.PermissionDenied,
+                    ),
+                )
                 return@launch
             }
             systemGeolocation.watchPosition(interval.coerceAtLeast(200.0).milliseconds, highAccuracyBool).collect { result ->

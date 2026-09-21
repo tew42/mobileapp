@@ -12,6 +12,7 @@ import androidx.core.location.LocationManagerCompat
 import androidx.core.location.LocationRequestCompat
 import co.touchlab.kermit.Logger
 import io.rebble.libpebblecommon.connection.AppContext
+import io.rebble.libpebblecommon.util.GeolocationError
 import io.rebble.libpebblecommon.util.GeolocationPositionResult
 import io.rebble.libpebblecommon.util.SystemGeolocation
 import io.rebble.libpebblecommon.util.SystemGeolocation.Companion.DEFAULT_MAX_AGE
@@ -44,13 +45,20 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
     @SuppressLint("MissingPermission")
     private fun locationFlow(intervalMillis: Long, highAccuracy: Boolean) = callbackFlow {
         if (!checkPermission()) {
-            trySend(GeolocationPositionResult.Error("Location permission not granted"))
+            trySend(
+                GeolocationPositionResult.Error("Location permission not granted", GeolocationError.PermissionDenied)
+            )
             close()
             awaitClose()
         } else {
             val bestProvider = getBestProvider()
             if (bestProvider == null) {
-                trySend(GeolocationPositionResult.Error("Location not available, no suitable provider found"))
+                trySend(
+                    GeolocationPositionResult.Error(
+                        "Location not available, no suitable provider found",
+                        GeolocationError.PositionUnavailable,
+                    )
+                )
                 close()
                 awaitClose()
                 return@callbackFlow
@@ -134,7 +142,10 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
     ): GeolocationPositionResult {
         logger.d { "getCurrentPosition called (maximumAge=$maximumAge, timeout=$timeout, highAccuracy=$highAccuracy)" }
         if (!checkPermission()) {
-            return GeolocationPositionResult.Error("Location permission not granted")
+            return GeolocationPositionResult.Error(
+                "Location permission not granted",
+                GeolocationError.PermissionDenied,
+            )
         }
         val effectiveMaxAge = maximumAge ?: DEFAULT_MAX_AGE
         val effectiveTimeout = timeout ?: DEFAULT_TIMEOUT
@@ -152,13 +163,14 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
                 logger.w { "No active provider; returning stale last known (age=$freshestAge)" }
                 freshest.toResult()
             } else {
-                GeolocationPositionResult.Error("Location not available")
+                GeolocationPositionResult.Error("Location not available", GeolocationError.PositionUnavailable)
             }
         }
 
         logger.d { "Requesting current location from provider: $bestProvider (timeout=$effectiveTimeout)" }
-        val active = withTimeoutOrNull(effectiveTimeout) {
-            suspendCancellableCoroutine { cont ->
+        // Wrapped so a timeout (null outcome) is distinguishable from the provider returning no fix.
+        val outcome = withTimeoutOrNull(effectiveTimeout) {
+            Result.success(suspendCancellableCoroutine<Location?> { cont ->
                 val cancellationSignal = androidx.core.os.CancellationSignal()
                 cont.invokeOnCancellation { cancellationSignal.cancel() }
                 val executor: Executor = ContextCompat.getMainExecutor(context)
@@ -168,17 +180,22 @@ class AndroidSystemGeolocation(appContext: AppContext): SystemGeolocation {
                     cancellationSignal,
                     executor
                 ) { location -> cont.resume(location) }
-            }
+            })
         }
+        val active = outcome?.getOrNull()
         return when {
             active != null -> active.toResult()
             freshest != null -> {
                 logger.w { "No current location available, returning stale last known (age=$freshestAge)" }
                 freshest.toResult()
             }
+            outcome == null -> {
+                logger.w { "Timed out waiting for a location and no last known location" }
+                GeolocationPositionResult.Error("Timed out waiting for a location", GeolocationError.Timeout)
+            }
             else -> {
                 logger.w { "No current location available and no last known location" }
-                GeolocationPositionResult.Error("Location not available")
+                GeolocationPositionResult.Error("Location not available", GeolocationError.PositionUnavailable)
             }
         }
     }
