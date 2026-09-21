@@ -345,12 +345,11 @@ fun GeocoderResult<Place>.usefulName(): String? {
     return place?.usefulName()
 }
 
-fun Place.usefulName(): String? {
-//    logger.v { "usefulName: name=$name street=$street isoCountryCode=$isoCountryCode country=$country " +
-//            "postalCode=$postalCode administrativeArea=$administrativeArea subAdministrativeArea=$subAdministrativeArea " +
-//            "locality=$locality subLocality=$subLocality thoroughfare=$thoroughfare subThoroughfare=$subThoroughfare" }
-    return locality ?: street
-}
+// Street last: an approximate fix lands on an arbitrary road. Blank names make the watch drop the record.
+fun Place.usefulName(): String? =
+    listOf(locality, subAdministrativeArea, administrativeArea, street)
+        .firstOrNull { !it.isNullOrBlank() }
+        ?.trim()
 
 enum class Day(
     val dayUuid: Uuid,
