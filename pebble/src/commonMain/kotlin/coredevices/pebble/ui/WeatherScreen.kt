@@ -357,7 +357,11 @@ private fun AddWeatherLocationDialog(
 
 fun Place.displayName(): String {
     val name = usefulName()
-    return "$name, ${administrativeArea ?: country}"
+    val region = listOf(administrativeArea, country)
+        .firstOrNull { !it.isNullOrBlank() }
+        ?.trim()
+        ?.takeIf { it != name }
+    return listOfNotNull(name, region).joinToString(", ").ifBlank { "Unknown location" }
 }
 
 @Composable
