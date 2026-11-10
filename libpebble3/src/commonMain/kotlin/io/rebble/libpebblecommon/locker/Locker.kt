@@ -135,7 +135,7 @@ class Locker(
     companion object {
         private val logger = Logger.withTag("Locker")
         private val PREF_KEY_HAVE_INSERTED_SYSTEM_APPS_AT_CORRECT_POSITION = "have_inserted_system_apps_at_correct_position_v4"
-        private const val PREF_KEY_HAVE_BACKFILLED_APP_INFO = "have_backfilled_app_info_2"
+        private const val PREF_KEY_HAVE_BACKFILLED_APP_INFO = "have_backfilled_app_info_3"
         private val WATCH_REMOVAL_TIMEOUT = 20.seconds
         private val LOCKER_SYNC_TIMEOUT = 15.seconds
     }
@@ -402,7 +402,12 @@ class Locker(
     suspend fun getApp(uuid: Uuid): LockerEntry? = lockerEntryDao.getEntry(uuid)
 
     private suspend fun mergeDecisions(byApp: Map<Uuid, Map<String, PermissionDecisionRecord>>) {
-        byApp.forEach { (uuid, decisions) -> permissions.mergePermissionDecisions(uuid, decisions) }
+        byApp.forEach { (uuid, decisions) ->
+            // Once its pbw is here its declaration is recorded, so a synced decision can't add a permission.
+            val entry = lockerEntryDao.getEntry(uuid)
+            val recorded = entry != null && lockerPBWCache.cachedPBWFileForApp(uuid, entry.version) != null
+            permissions.mergePermissionDecisions(uuid, decisions, onlyExisting = recorded)
+        }
     }
 
     suspend fun update(locker: LockerModelWrapper) {

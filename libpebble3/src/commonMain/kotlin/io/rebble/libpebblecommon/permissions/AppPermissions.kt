@@ -276,7 +276,11 @@ class AppPermissions(
     suspend fun recordRequested(appUuid: Uuid, requested: RequestedPermissions) {
         val all = requested.all
         if (requested.declared != null) {
-            val undeclared = legacyRequested(hasPkjs = true, hasAndroidCompanion = true) - all.toSet()
+            // Never asked for or used here, e.g. synced from another device; a picked file is the user's own.
+            val unclaimed = dao.getByAppUuid(appUuid)
+                .filter { it.askedAtMs == null && it.lastUsedAtMs == null && fileScopeOf(it.permission) == null }
+                .map { it.permission }
+            val undeclared = legacyRequested(hasPkjs = true, hasAndroidCompanion = true) + unclaimed - all.toSet()
             dao.deleteByAppUuidAndPermissions(appUuid, undeclared)
         }
         val declared = requested.declared
@@ -406,11 +410,19 @@ class AppPermissions(
     override fun permissionDecisions(): Flow<List<LockerAppPermission>> =
         dao.allFlow().map { rows -> rows.filter { it.granted != null } }
 
-    /** Takes each of [decisions] that is newer than the one held for [appUuid], e.g. from another device. */
-    suspend fun mergePermissionDecisions(appUuid: Uuid, decisions: Map<String, PermissionDecisionRecord>) {
+    /**
+     * Takes each of [decisions] that is newer than the one held for [appUuid], e.g. from another device.
+     * With [onlyExisting], one for a key [appUuid] has no row for is dropped.
+     */
+    suspend fun mergePermissionDecisions(
+        appUuid: Uuid,
+        decisions: Map<String, PermissionDecisionRecord>,
+        onlyExisting: Boolean = false,
+    ) {
         val existing = dao.getByAppUuid(appUuid).associateBy { it.permission }
         val newer = decisions.filter { (key, record) ->
             val held = existing[key]
+            if (onlyExisting && held == null) return@filter false
             held?.granted == null || (held.decidedAtMs ?: 0) < record.decidedAtMs
         }
         if (newer.isEmpty()) return

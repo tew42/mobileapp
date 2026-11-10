@@ -699,6 +699,51 @@ class WaitingRequestsTest {
     }
 
     @Test
+    fun onceDeclaredASyncedDecisionOnlyDecidesWhatTheAppHas() = runTest {
+        val permissions = permissions(dao)
+        permissions.recordRequested(APP, listOf(TIMELINE))
+        val synced = mapOf(
+            TIMELINE to PermissionDecisionRecord(granted = true, decidedAtMs = 1_000),
+            INTERNET to PermissionDecisionRecord(granted = false, decidedAtMs = 1_000),
+        )
+        permissions.mergePermissionDecisions(APP, synced, onlyExisting = true)
+        assertEquals(true, dao.row(TIMELINE)!!.granted)
+        assertNull(dao.row(INTERNET))
+        permissions.mergePermissionDecisions(APP, synced)
+        assertEquals(false, dao.row(INTERNET)!!.granted)
+    }
+
+    @Test
+    fun declaringDropsADecisionTheAppNeverAskedForOrUsedHere() = runTest {
+        val permissions = permissions(dao)
+        val file = readFilesKey("content://docs/tree/notes")
+        permissions.request(subject(), CALENDAR)
+        permissions.setDecisions(APP, mapOf(INTERNET to false, LOCATION to false, CALENDAR to true, file to true))
+        permissions.recordRequested(APP, RequestedPermissions(declared = listOf(PluginPermission(LOCATION)), hasPkjs = true))
+        assertEquals(setOf(LOCATION, CALENDAR, file), dao.rows.value.keys.map { it.second }.toSet())
+        assertEquals(false, dao.row(LOCATION)!!.granted)
+    }
+
+    @Test
+    fun anAppDeclaringNothingKeepsNoSyncedDecision() = runTest {
+        val permissions = permissions(dao)
+        permissions.mergePermissionDecisions(
+            APP,
+            listOf(INTERNET, TIMELINE, LOCATION).associateWith { PermissionDecisionRecord(granted = false, decidedAtMs = 1_000) },
+        )
+        permissions.recordRequested(APP, RequestedPermissions(declared = emptyList(), hasPkjs = true))
+        assertEquals(emptyMap(), dao.rows.value)
+    }
+
+    @Test
+    fun aLegacyAppKeepsDecisionsItWasNeverAskedFor() = runTest {
+        val permissions = permissions(dao)
+        permissions.setDecisions(APP, mapOf(CALENDAR to false))
+        permissions.recordRequested(APP, RequestedPermissions(declared = null, hasPkjs = true))
+        assertEquals(false, dao.row(CALENDAR)!!.granted)
+    }
+
+    @Test
     fun aNullDecisionRecordsASeenUndecidedRow() = runTest {
         permissions(dao).setDecisions(APP, mapOf(CALENDAR to null))
         val row = dao.row(CALENDAR)!!
